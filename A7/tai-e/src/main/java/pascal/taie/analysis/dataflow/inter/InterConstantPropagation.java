@@ -199,8 +199,8 @@ public class InterConstantPropagation extends
             var index1 = in.get(array1.getIndex());
             var index2 = in.get(array2.getIndex());
 
-            if (index2.isUndef()) {
-                index2 = arrayIndexMap.get(array2.getIndex());
+            if (index1.isUndef()) {
+                index1 = arrayIndexMap.getOrDefault(array1.getIndex(), Value.getUndef());
             }
             return (index1.isConstant() && index2.isConstant() && index1.equals(index2)) ||
                     (index1.isConstant() && index2.isNAC()) ||

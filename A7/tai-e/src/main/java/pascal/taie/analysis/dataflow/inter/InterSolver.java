@@ -62,11 +62,10 @@ class InterSolver<Method, Node, Fact> {
                 .map(icfg::getEntryOf)
                 .collect(Collectors.toSet());
         icfg.forEach(it -> {
+            result.setInFact(it, analysis.newInitialFact());
             if (entries.contains(it)) {
-                result.setInFact(it, analysis.newBoundaryFact(it));
                 result.setOutFact(it, analysis.newBoundaryFact(it));
             } else {
-                result.setInFact(it, analysis.newInitialFact());
                 result.setOutFact(it, analysis.newInitialFact());
             }
         });
