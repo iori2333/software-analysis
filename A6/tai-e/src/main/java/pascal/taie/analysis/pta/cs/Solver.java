@@ -185,6 +185,11 @@ class Solver {
             var csCallee = csManager.getCSMethod(calleeContext, callee);
             var result = stmt.getResult();
 
+            var edge = new Edge<>(CallGraphs.getCallKind(stmt), csCallSite, csCallee);
+            if (!callGraph.addEdge(edge)) {
+                return visitDefault(stmt);
+            }
+
             addReachable(csCallee);
             for (var i = 0; i < callee.getParamCount(); i++) {
                 var param = callee.getIR().getParam(i);
