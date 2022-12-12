@@ -55,16 +55,10 @@ public class InterConstantPropagation extends
 
     private PointerAnalysisResult pta;
 
-    // trace influenced vars to update work list.
-    private final Map<FieldRef, Collection<StoreField>> staticStoreFieldTrace = new HashMap<>();
-
+    // trace influenced loading vars to update work list.
     private final Map<FieldRef, Collection<LoadField>> staticLoadFieldTrace = new HashMap<>();
 
-    private final Map<Var, Collection<StoreField>> instanceStoreFieldTrace = new HashMap<>();
-
     private final Map<Var, Collection<LoadField>> instanceLoadFieldTrace = new HashMap<>();
-
-    private final Map<Var, Collection<StoreArray>> storeArrayTrace = new HashMap<>();
 
     private final Map<Var, Collection<LoadArray>> loadArrayTrace = new HashMap<>();
 
@@ -80,12 +74,10 @@ public class InterConstantPropagation extends
         pta = World.get().getResult(ptaId);
         // You can do initialization work here
 
-        // add tracing of var aliases
+        // add tracing of loading vars
         pta.getVars().forEach(it -> {
-            instanceStoreFieldTrace.put(it, new HashSet<>(it.getStoreFields()));
             instanceLoadFieldTrace.put(it, new HashSet<>(it.getLoadFields()));
             loadArrayTrace.put(it, new HashSet<>(it.getLoadArrays()));
-            storeArrayTrace.put(it, new HashSet<>(it.getStoreArrays()));
         });
 
         pta.getVars().forEach(var1 -> pta.getVars().forEach(var2 -> {
@@ -95,22 +87,13 @@ public class InterConstantPropagation extends
             var pts1 = pta.getPointsToSet(var1);
             var pts2 = pta.getPointsToSet(var2);
             if (intersectsWith(pts1, pts2)) {
-                instanceStoreFieldTrace.get(var1).addAll(var1.getStoreFields());
-                instanceLoadFieldTrace.get(var2).addAll(var2.getLoadFields());
+                instanceLoadFieldTrace.get(var1).addAll(var2.getLoadFields());
                 loadArrayTrace.get(var1).addAll(var2.getLoadArrays());
-                storeArrayTrace.get(var1).addAll(var2.getStoreArrays());
             }
         }));
 
         // add tracing of static aliases
         pta.getCallGraph().reachableMethods().forEach(m -> m.getIR().forEach(stmt -> {
-            if (stmt instanceof StoreField stStoreField && stStoreField.isStatic()) {
-                var ref = stStoreField.getFieldRef();
-                staticStoreFieldTrace
-                        .computeIfAbsent(ref, k -> new HashSet<>())
-                        .add(stStoreField);
-            }
-
             if (stmt instanceof LoadField stLoadField && stLoadField.isStatic()) {
                 var ref = stLoadField.getFieldRef();
                 staticLoadFieldTrace
