@@ -28,7 +28,6 @@ import pascal.taie.analysis.pta.core.cs.element.CSCallSite;
 import pascal.taie.analysis.pta.core.cs.element.CSMethod;
 import pascal.taie.analysis.pta.core.cs.element.CSObj;
 import pascal.taie.analysis.pta.core.heap.Obj;
-import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.language.classes.JMethod;
 
 /**
@@ -43,19 +42,27 @@ public class _2CallSelector implements ContextSelector {
 
     @Override
     public Context selectContext(CSCallSite callSite, JMethod callee) {
-        // TODO - finish me
-        return null;
+        var context = callSite.getContext();
+        var invoke = callSite.getCallSite();
+        var n = context.getLength();
+        if (n == 0) {
+            return ListContext.make(invoke);
+        }
+        return ListContext.make(context.getElementAt(n - 1), invoke);
     }
 
     @Override
     public Context selectContext(CSCallSite callSite, CSObj recv, JMethod callee) {
-        // TODO - finish me
-        return null;
+        return selectContext(callSite, callee);
     }
 
     @Override
     public Context selectHeapContext(CSMethod method, Obj obj) {
-        // TODO - finish me
-        return null;
+        var context = method.getContext();
+        var n = context.getLength();
+        if (n == 0) {
+            return getEmptyContext();
+        }
+        return ListContext.make(context.getElementAt(n - 1));
     }
 }
