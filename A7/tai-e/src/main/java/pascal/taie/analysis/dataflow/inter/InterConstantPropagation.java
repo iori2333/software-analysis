@@ -210,16 +210,14 @@ public class InterConstantPropagation extends
                             .getOrDefault(staticField.getFieldRef(), Collections.emptySet())
                             .stream()
                             .filter(s -> s.getFieldRef().resolve() == staticField.getFieldRef().resolve())
-                            .findFirst()
-                            .ifPresent(solver::addWorkList);
+                            .forEach(solver::addWorkList);
 
                 } else if (field instanceof InstanceFieldAccess instanceField) {
                     instanceLoadFieldTrace
                             .getOrDefault(instanceField.getBase(), Collections.emptySet())
                             .stream()
                             .filter(s -> s.getFieldRef().resolve() == instanceField.getFieldRef().resolve())
-                            .findFirst()
-                            .ifPresent(solver::addWorkList);
+                            .forEach(solver::addWorkList);
                 }
             }
             return flag;
@@ -242,9 +240,7 @@ public class InterConstantPropagation extends
             if (flag) {
                 loadArrayTrace
                         .getOrDefault(arrayAccess.getBase(), Collections.emptySet())
-                        .stream()
-                        .findFirst()
-                        .ifPresent(solver::addWorkList);
+                        .forEach(solver::addWorkList);
             }
             return flag;
         }
