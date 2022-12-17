@@ -42,6 +42,8 @@ import pascal.taie.ir.stmt.*;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
 
+import java.util.*;
+
 public class Solver {
 
     private static final Logger logger = LogManager.getLogger(Solver.class);
@@ -63,6 +65,8 @@ public class Solver {
     private TaintAnalysiss taintAnalysis;
 
     private PointerAnalysisResult result;
+
+    private TaintPointerFlowGraph taintPointerFlowGraph;
 
     Solver(AnalysisOptions options, HeapModel heapModel,
            ContextSelector contextSelector) {
@@ -95,6 +99,7 @@ public class Solver {
         pointerFlowGraph = new PointerFlowGraph();
         workList = new WorkList();
         taintAnalysis = new TaintAnalysiss(this);
+        taintPointerFlowGraph = new TaintPointerFlowGraph();
         // process program entry, i.e., main method
         Context defContext = contextSelector.getEmptyContext();
         JMethod main = World.get().getMainMethod();
@@ -131,8 +136,6 @@ public class Solver {
             this.context = csMethod.getContext();
         }
 
-        // TODO - if you choose to implement addReachable()
-        //  via visitor pattern, then finish me
         @Override
         public Void visit(New stmt) {
             var xObj = heapModel.getObj(stmt);
@@ -204,6 +207,11 @@ public class Solver {
                 var source = csManager.getCSVar(context, arg);
                 var target = csManager.getCSVar(calleeContext, param);
                 addPFGEdge(source, target);
+                if (result != null) {
+                    var resultTarget = csManager.getCSVar(context, result);
+                    taintAnalysis.getArg2ResultTypesOf(callee, i)
+                            .forEach(it -> addTPFGEdge(source, resultTarget, it));
+                }
             }
 
             if (result != null) {
@@ -212,6 +220,11 @@ public class Solver {
                     var source = csManager.getCSVar(calleeContext, retVar);
                     addPFGEdge(source, target);
                 }
+                taintAnalysis.getSourceTypesOf(callee)
+                        .stream()
+                        .map(it -> taintAnalysis.getTaintObject(stmt, it))
+                        .map(PointsToSetFactory::make)
+                        .forEach(it -> workList.addEntry(target, it));
             }
 
             return visitDefault(stmt);
@@ -226,6 +239,22 @@ public class Solver {
             return;
         }
         var pts = source.getPointsToSet();
+        if (!pts.isEmpty()) {
+            workList.addEntry(target, pts);
+        }
+    }
+
+    private void addTPFGEdge(Pointer source, Pointer target, Type type) {
+        if (!taintPointerFlowGraph.addEdge(source, target, type)) {
+            return;
+        }
+        var pts = PointsToSetFactory.make();
+        source.getPointsToSet().objects()
+                .map(CSObj::getObject)
+                .filter(taintAnalysis::isTaint)
+                .map(taintAnalysis::getSourceCall)
+                .map(it -> taintAnalysis.getTaintObject(it, type))
+                .forEach(pts::addObject);
         if (!pts.isEmpty()) {
             workList.addEntry(target, pts);
         }
@@ -279,8 +308,8 @@ public class Solver {
     }
 
     /**
-     * Propagates pointsToSet to pt(pointer) and its PFG successors,
-     * returns the difference set of pointsToSet and pt(pointer).
+     * Propagates pointsToSet to pt(target) and its PFG successors,
+     * returns the difference set of pointsToSet and pt(target).
      */
     private PointsToSet propagate(Pointer pointer, PointsToSet pointsToSet) {
         var delta = PointsToSetFactory.make();
@@ -292,7 +321,18 @@ public class Solver {
             return delta;
         }
 
-        delta.forEach(oldPts::addObject);
+        delta.forEach(csObj -> {
+            oldPts.addObject(csObj);
+            if (taintAnalysis.isTaint(csObj.getObject())) {
+                var sourceCall = taintAnalysis.getSourceCall(csObj.getObject());
+                taintPointerFlowGraph
+                        .getEntriesOf(pointer)
+                        .forEach(it -> {
+                            var pts = PointsToSetFactory.make(taintAnalysis.getTaintObject(sourceCall, it.type()));
+                            workList.addEntry(it.target(), pts);
+                        });
+            }
+        });
         pointerFlowGraph.getSuccsOf(pointer)
                 .forEach(it -> workList.addEntry(it, delta));
         return delta;
@@ -329,6 +369,13 @@ public class Solver {
                 var source = csManager.getCSVar(context, arg);
                 var target = csManager.getCSVar(calleeContext, param);
                 addPFGEdge(source, target);
+                taintAnalysis.getArg2BaseTypesOf(callee, i)
+                        .forEach(type -> addTPFGEdge(source, recv, type));
+                if (result != null) {
+                    var resultTarget = csManager.getCSVar(context, result);
+                    taintAnalysis.getArg2ResultTypesOf(callee, i)
+                            .forEach(it -> addTPFGEdge(source, resultTarget, it));
+                }
             }
 
             if (result != null) {
@@ -337,6 +384,13 @@ public class Solver {
                     var source = csManager.getCSVar(calleeContext, retVar);
                     addPFGEdge(source, target);
                 }
+                taintAnalysis.getSourceTypesOf(callee)
+                        .stream()
+                        .map(it -> taintAnalysis.getTaintObject(stmt, it))
+                        .map(PointsToSetFactory::make)
+                        .forEach(it -> workList.addEntry(target, it));
+                taintAnalysis.getBase2ResultTypesOf(callee)
+                        .forEach(it -> addTPFGEdge(recv, target, it));
             }
         }
     }
@@ -359,5 +413,26 @@ public class Solver {
             result = new PointerAnalysisResultImpl(csManager, callGraph);
         }
         return result;
+    }
+}
+
+class TaintPointerFlowGraph {
+    private final Map<Pointer, Collection<TaintEntry>> taintPointerFlowGraph;
+
+    record TaintEntry(Pointer target, Type type) {
+    }
+
+    TaintPointerFlowGraph() {
+        taintPointerFlowGraph = new HashMap<>();
+    }
+
+    boolean addEdge(Pointer source, Pointer target, Type type) {
+        return taintPointerFlowGraph
+                .computeIfAbsent(source, it -> new HashSet<>())
+                .add(new TaintEntry(target, type));
+    }
+
+    Collection<TaintEntry> getEntriesOf(Pointer source) {
+        return taintPointerFlowGraph.getOrDefault(source, Collections.emptySet());
     }
 }
